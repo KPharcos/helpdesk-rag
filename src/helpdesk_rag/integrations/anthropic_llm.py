@@ -6,7 +6,7 @@ import logging
 
 import anthropic
 
-from helpdesk_rag.domain import LLMError, LLMTimeoutError
+from helpdesk_rag.domain import LLMError, LLMReply, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class AnthropicLLM:
         self._max_tokens = max_tokens
         self._effort = effort
 
-    async def generate(self, system: str, prompt: str) -> str:
+    async def generate(self, system: str, prompt: str) -> LLMReply:
         try:
             response = await self._client.beta.messages.create(
                 model=self.model,
@@ -64,13 +64,19 @@ class AnthropicLLM:
         if response.stop_reason == "refusal":
             category = getattr(getattr(response, "stop_details", None), "category", None)
             raise LLMError(f"Claude declined to answer (category={category})")
-        if response.stop_reason == "max_tokens":
+        truncated = response.stop_reason == "max_tokens"
+        if truncated:
             logger.warning("Claude answer truncated at max_tokens=%s", self._max_tokens)
+        # With server-side fallbacks, a declined request is answered by another model;
+        # the response names the model that actually served it.
+        served_by = getattr(response, "model", None)
+        if served_by and served_by != self.model:
+            logger.warning("Claude request served by fallback model %s (requested %s)", served_by, self.model)
 
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         if not text:
             raise LLMError(f"Claude returned no text (stop_reason={response.stop_reason})")
-        return text
+        return LLMReply(text=text, truncated=truncated)
 
     async def aclose(self) -> None:
         await self._client.close()

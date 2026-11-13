@@ -11,7 +11,7 @@ import ollama
 import pytest
 
 from helpdesk_rag.config import Settings
-from helpdesk_rag.domain import LLMError, LLMTimeoutError
+from helpdesk_rag.domain import LLMError, LLMReply, LLMTimeoutError
 from helpdesk_rag.integrations.anthropic_llm import FALLBACK_BETA, AnthropicLLM
 from helpdesk_rag.integrations.factory import build_llm
 from helpdesk_rag.integrations.ollama_llm import OllamaLLM
@@ -38,8 +38,10 @@ def _anthropic(result) -> tuple[AnthropicLLM, _StubBetaMessages]:
     return AnthropicLLM(client, model="claude-opus-5-5", max_tokens=16000, effort="low"), messages
 
 
-def _message(*blocks, stop_reason="end_turn", stop_details=None):
-    return SimpleNamespace(content=list(blocks), stop_reason=stop_reason, stop_details=stop_details)
+def _message(*blocks, stop_reason="end_turn", stop_details=None, model="claude-opus-5-5"):
+    return SimpleNamespace(
+        content=list(blocks), stop_reason=stop_reason, stop_details=stop_details, model=model
+    )
 
 
 def _text(text: str):
@@ -53,7 +55,7 @@ async def test_anthropic_request_shape_and_text_extraction() -> None:
     thinking = SimpleNamespace(type="thinking", thinking="", signature="sig")
     llm, messages = _anthropic(_message(thinking, _text("Step 1. "), _text("Done [a#1]")))
 
-    assert await llm.generate("SYS", "PROMPT") == "Step 1. Done [a#1]"
+    assert await llm.generate("SYS", "PROMPT") == LLMReply("Step 1. Done [a#1]", truncated=False)
     kwargs = messages.kwargs
     assert kwargs["model"] == "claude-opus-5-5"
     assert kwargs["system"] == "SYS"
@@ -70,6 +72,26 @@ async def test_anthropic_refusal_is_llm_error() -> None:
     llm, _ = _anthropic(_message(_text("partial"), stop_reason="refusal", stop_details=details))
     with pytest.raises(LLMError, match="declined"):
         await llm.generate("s", "p")
+
+
+async def test_anthropic_max_tokens_is_flagged_as_truncated() -> None:
+    llm, _ = _anthropic(_message(_text("Step 1. Open the por"), stop_reason="max_tokens"))
+    assert await llm.generate("s", "p") == LLMReply("Step 1. Open the por", truncated=True)
+
+
+async def test_anthropic_logs_when_a_fallback_model_served(caplog) -> None:
+    llm, _ = _anthropic(_message(_text("Answer [a#1]"), model="claude-opus-4-8"))
+    with caplog.at_level("WARNING", logger="helpdesk_rag.integrations.anthropic_llm"):
+        reply = await llm.generate("s", "p")
+    assert reply.text == "Answer [a#1]"
+    assert any("fallback model claude-opus-4-8" in r.getMessage() for r in caplog.records)
+
+
+async def test_anthropic_same_model_logs_no_fallback(caplog) -> None:
+    llm, _ = _anthropic(_message(_text("Answer [a#1]")))
+    with caplog.at_level("WARNING", logger="helpdesk_rag.integrations.anthropic_llm"):
+        await llm.generate("s", "p")
+    assert not any("fallback" in r.getMessage() for r in caplog.records)
 
 
 async def test_anthropic_empty_text_is_llm_error() -> None:
@@ -147,7 +169,7 @@ def _ollama(result) -> tuple[OllamaLLM, _StubOllama]:
 
 async def test_ollama_success() -> None:
     llm, client = _ollama(SimpleNamespace(message=SimpleNamespace(content="  Answer [x#1] ")))
-    assert await llm.generate("SYS", "PROMPT") == "Answer [x#1]"
+    assert await llm.generate("SYS", "PROMPT") == LLMReply("Answer [x#1]", truncated=False)
     assert client.kwargs["model"] == "llama3.1:8b"
     assert client.kwargs["messages"][0] == {"role": "system", "content": "SYS"}
     assert client.kwargs["messages"][1] == {"role": "user", "content": "PROMPT"}
@@ -168,6 +190,12 @@ async def test_ollama_errors_are_mapped(exc, expected) -> None:
     with pytest.raises(expected) as info:
         await llm.generate("s", "p")
     assert type(info.value) is expected
+
+
+async def test_ollama_length_limit_is_flagged_as_truncated() -> None:
+    response = SimpleNamespace(message=SimpleNamespace(content="Step 1. Op"), done_reason="length")
+    llm, _ = _ollama(response)
+    assert await llm.generate("s", "p") == LLMReply("Step 1. Op", truncated=True)
 
 
 async def test_ollama_empty_answer_is_error() -> None:

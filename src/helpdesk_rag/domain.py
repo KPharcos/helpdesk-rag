@@ -30,10 +30,19 @@ class RetrievedChunk:
 
 
 @dataclass(frozen=True, slots=True)
+class LLMReply:
+    """What an LLM adapter returns: the answer text and whether it hit the output limit."""
+
+    text: str
+    truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Answer:
     answer: str
     status: AnswerStatus
     sources: list[RetrievedChunk] = field(default_factory=list)
+    truncated: bool = False  # the model stopped at its output limit; the answer may be cut off
 
 
 class HelpdeskError(Exception):

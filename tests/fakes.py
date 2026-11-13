@@ -8,6 +8,8 @@ import re
 
 import numpy as np
 
+from helpdesk_rag.domain import LLMReply
+
 DIM = 4096
 _STOPWORDS = {
     "a", "an", "and", "are", "can", "do", "does", "for", "how", "i", "in", "is", "it", "my",
@@ -40,17 +42,18 @@ class FakeEmbedder:
 
 
 class FakeLLM:
-    """Records calls; returns a canned answer, raises `error`, or sleeps `delay` seconds first."""
+    """Records calls; returns a canned answer (`truncated` flags it), raises `error`, or sleeps `delay` first."""
 
     def __init__(self, answer: str = "Use the self-service portal. [password-reset#1]") -> None:
         self.answer = answer
         self.error: Exception | None = None
         self.delay: float = 0.0
+        self.truncated = False
         self.calls: list[tuple[str, str]] = []
         self.active = 0
         self.max_active = 0
 
-    async def generate(self, system: str, prompt: str) -> str:
+    async def generate(self, system: str, prompt: str) -> LLMReply:
         self.calls.append((system, prompt))
         self.active += 1
         self.max_active = max(self.max_active, self.active)
@@ -59,6 +62,6 @@ class FakeLLM:
                 await asyncio.sleep(self.delay)
             if self.error is not None:
                 raise self.error
-            return self.answer
+            return LLMReply(self.answer, truncated=self.truncated)
         finally:
             self.active -= 1

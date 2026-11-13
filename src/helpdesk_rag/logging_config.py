@@ -34,6 +34,8 @@ def configure_logging(level: str = "INFO") -> None:
 
     # Our middleware logs every request; uvicorn's access log would duplicate it.
     logging.getLogger("uvicorn.access").disabled = True
-    # Keep noisy client libraries at WARNING unless explicitly debugging.
-    for name in ("httpx", "httpx2", "httpcore", "anthropic"):
-        logging.getLogger(name).setLevel(max(logging.WARNING, root.level))
+    # Keep noisy client libraries at WARNING, unless the app itself runs at DEBUG:
+    # then they inherit DEBUG (NOTSET), which shows the HTTP traffic.
+    debugging = root.level <= logging.DEBUG
+    for name in ("httpx", "httpx2", "httpcore", "httpcore2", "anthropic"):
+        logging.getLogger(name).setLevel(logging.NOTSET if debugging else logging.WARNING)

@@ -23,6 +23,7 @@ from langgraph.graph import END, START, StateGraph
 from helpdesk_rag.domain import (
     AnswerStatus,
     InvalidQuestionError,
+    LLMReply,
     LLMTimeoutError,
     RetrievedChunk,
 )
@@ -38,6 +39,7 @@ class QAState(TypedDict, total=False):
     retrieved: list[RetrievedChunk]
     answer: str
     status: AnswerStatus
+    truncated: bool
 
 
 def build_graph(
@@ -78,16 +80,16 @@ def build_graph(
     async def generate(state: QAState) -> QAState:
         prompt = build_user_prompt(state["question"], state["retrieved"])
 
-        async def call() -> str:
+        async def call() -> LLMReply:
             async with llm_semaphore:  # caps concurrent provider calls per process
                 return await llm.generate(SYSTEM_PROMPT, prompt)
 
         try:
             # Waiting for a semaphore slot counts toward the timeout.
-            answer = await asyncio.wait_for(call(), timeout=llm_timeout_seconds)
+            reply = await asyncio.wait_for(call(), timeout=llm_timeout_seconds)
         except TimeoutError as exc:
             raise LLMTimeoutError(f"LLM call exceeded {llm_timeout_seconds}s") from exc
-        return {"answer": answer, "status": "answered"}
+        return {"answer": reply.text, "status": "answered", "truncated": reply.truncated}
 
     async def no_context(state: QAState) -> QAState:
         logger.info("no relevant context found; LLM not called")

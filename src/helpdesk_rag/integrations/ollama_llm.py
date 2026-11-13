@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 import ollama
 
-from helpdesk_rag.domain import LLMError, LLMTimeoutError
+from helpdesk_rag.domain import LLMError, LLMReply, LLMTimeoutError
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaLLM:
@@ -21,7 +25,7 @@ class OllamaLLM:
         self.model = model
         self._options = {"num_ctx": num_ctx, "temperature": temperature}
 
-    async def generate(self, system: str, prompt: str) -> str:
+    async def generate(self, system: str, prompt: str) -> LLMReply:
         try:
             response = await self._client.chat(
                 model=self.model,
@@ -42,7 +46,11 @@ class OllamaLLM:
         text = (response.message.content or "").strip()
         if not text:
             raise LLMError("Ollama returned an empty answer")
-        return text
+        # done_reason "length" means generation stopped at the token limit, not at a natural end.
+        truncated = getattr(response, "done_reason", None) == "length"
+        if truncated:
+            logger.warning("Ollama answer truncated at the token limit")
+        return LLMReply(text=text, truncated=truncated)
 
     async def aclose(self) -> None:
         close = getattr(self._client, "close", None)

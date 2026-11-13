@@ -52,7 +52,8 @@ TLD). You can replace them with your own markdown files and re-run ingest.
 Implemented:
 
 - `POST /ask`: question → retrieval → grounded answer with sources (`doc_id`, `title`,
-  `chunk_id`, `score`, `snippet`) and a `status` (`answered` | `no_relevant_context`).
+  `chunk_id`, `score`, `snippet`), a `status` (`answered` | `no_relevant_context`) and a
+  `truncated` flag.
 - `GET /health`: liveness, index readiness, active LLM provider/model and embedding model.
 - Interactive OpenAPI docs at `/docs` with request/response examples.
 - Ingest as a CLI (`helpdesk-rag-ingest`) and optionally at startup (`INGEST_ON_STARTUP=true`).
@@ -319,9 +320,14 @@ Example success response (Claude; answer text shortened):
     {"doc_id": "password-reset", "title": "Resetting Your Password", "chunk_id": "password-reset#2",
      "score": 0.7631, "snippet": "1. On any device, open the self-service portal at https://password.brightfield.example. ..."}
   ],
+  "truncated": false,
   "request_id": "demo-42"
 }
 ```
+
+`truncated` is `true` when the model stopped at its output limit (Claude: `ANTHROPIC_MAX_TOKENS`;
+Ollama: `done_reason` is `length`), so the answer may be cut off. The request still returns 200
+and the event is logged.
 
 Every error has the same shape:
 
@@ -369,7 +375,7 @@ All settings are environment variables (or a `.env` file in the working director
 | `TOP_K` / `MIN_RELEVANCE_SCORE` | `4` / `0.62` | retrieval depth and cosine threshold |
 | `DOCS_DIR` / `INDEX_DIR` | `data/docs` / `data/index` | input documents and index location |
 | `INGEST_ON_STARTUP` | `false` | build the index at startup when none exists |
-| `LOG_LEVEL` | `INFO` | standard logging level |
+| `LOG_LEVEL` | `INFO` | standard logging level; at `DEBUG` the HTTP client libraries (httpx, httpcore, anthropic SDK) log too, otherwise they stay at WARNING |
 
 Changing `LLM_PROVIDER` and restarting is all it takes to switch modes; `/health` shows the
 active provider and model. Changing `EMBEDDING_MODEL` or the chunking settings requires
@@ -392,7 +398,9 @@ Request details (`integrations/anthropic_llm.py`): async client with `timeout` a
 output_config={"effort": ...}, betas=["server-side-fallback-2026-07-01"], fallbacks="default")`.
 No sampling parameters are sent (the model doesn't accept them). The adapter checks
 `stop_reason` before reading content, treats `refusal` as `llm_error`, and reads only `text`
-blocks. SDK exceptions are mapped: `APITimeoutError` → `llm_timeout`; `RateLimitError`,
+blocks. An answer cut off at `max_tokens` is returned with `truncated: true`; when a fallback
+model served the request (the response names a different model), the adapter logs a warning
+naming it. SDK exceptions are mapped: `APITimeoutError` → `llm_timeout`; `RateLimitError`,
 `APIStatusError`, `APIConnectionError` → `llm_error`.
 
 ## 10. Free local alternative: Ollama

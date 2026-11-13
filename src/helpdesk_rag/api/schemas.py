@@ -57,6 +57,7 @@ class AskResponse(BaseModel):
                             "snippet": "Use the self-service portal ...",
                         }
                     ],
+                    "truncated": False,
                     "request_id": "3f2b9c0e7a7d4c9e9b8f1f7c2d1a0b9e",
                 }
             ]
@@ -66,6 +67,10 @@ class AskResponse(BaseModel):
     answer: str
     status: Literal["answered", "no_relevant_context"]
     sources: list[Source]
+    truncated: bool = Field(
+        default=False,
+        description="True when the model stopped at its output limit, so the answer may be cut off.",
+    )
     request_id: str
 
     @classmethod
@@ -83,6 +88,7 @@ class AskResponse(BaseModel):
                 )
                 for r in answer.sources
             ],
+            truncated=answer.truncated,
             request_id=request_id,
         )
 

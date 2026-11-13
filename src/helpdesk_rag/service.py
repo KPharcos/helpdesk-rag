@@ -30,4 +30,5 @@ class QAService:
             answer=state["answer"],
             status=state["status"],
             sources=list(state.get("retrieved", [])),
+            truncated=bool(state.get("truncated", False)),
         )

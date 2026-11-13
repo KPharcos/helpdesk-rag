@@ -6,12 +6,12 @@ from typing import Protocol
 
 import numpy as np
 
-from helpdesk_rag.domain import RetrievedChunk
+from helpdesk_rag.domain import LLMReply, RetrievedChunk
 
 
 class LLMClient(Protocol):
-    async def generate(self, system: str, prompt: str) -> str:
-        """Return the answer text. Raise LLMError / LLMTimeoutError on failure."""
+    async def generate(self, system: str, prompt: str) -> LLMReply:
+        """Return the answer and whether it was cut off. Raise LLMError / LLMTimeoutError on failure."""
         ...
 
 

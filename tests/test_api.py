@@ -33,7 +33,8 @@ def test_ask_happy_path(client: TestClient, llm) -> None:
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert set(body) == {"answer", "status", "sources", "request_id"}
+    assert set(body) == {"answer", "status", "sources", "truncated", "request_id"}
+    assert body["truncated"] is False
     assert body["status"] == "answered"
     assert body["answer"] == llm.answer
     assert body["request_id"] == response.headers["X-Request-ID"]
@@ -132,6 +133,14 @@ def test_ask_missing_body(client: TestClient) -> None:
     assert_error(client.post("/ask"), 422, "validation_error")
 
 
+def test_question_of_only_separator_characters_is_rejected(client: TestClient, llm) -> None:
+    # Passes the schema's strip (not Unicode whitespace) but Python's split removes it, so the
+    # graph's validate step rejects it: the 422 must still come in the uniform error shape.
+    error = assert_error(client.post("/ask", json={"question": "\x1c\x1d"}), 422, "validation_error")
+    assert "must not be empty" in error["message"]
+    assert llm.calls == []
+
+
 # --- no relevant context ----------------------------------------------------------------
 
 
@@ -144,6 +153,14 @@ def test_no_relevant_context_skips_llm(client: TestClient, llm) -> None:
     assert body["answer"] == NO_CONTEXT_ANSWER
     assert body["sources"] == []
     assert llm.calls == []
+
+
+def test_truncated_answer_is_flagged(client: TestClient, llm) -> None:
+    llm.truncated = True
+    response = client.post("/ask", json={"question": "How do I reset my password?"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "answered"
+    assert response.json()["truncated"] is True
 
 
 # --- LLM failures -----------------------------------------------------------------------
