@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+.pytest_cache
+**/__pycache__
+data/index
+.cache
+tests
+_bmad
+_bmad-output
+.claude
+*.pdf
+docker-compose*.yml

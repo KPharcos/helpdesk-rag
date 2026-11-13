@@ -1,0 +1,61 @@
+# Default: fully local, free mode (app + Ollama). No API key needed.
+#   docker compose up --build
+# Cloud mode (Claude) without starting Ollama:
+#   LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build --no-deps app
+# NVIDIA GPU for Ollama:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+
+services:
+  app:
+    build: .
+    image: helpdesk-rag:local
+    ports:
+      - "8000:8000"
+    # Optional: every setting in .env reaches the container (copy .env.example to .env).
+    # Note: LLM_PROVIDER in .env also selects the Docker mode (it defaults to ollama only
+    # when .env does not set it). The `environment:` entries below win over .env.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: http://ollama:11434  # container-internal address; must win over .env
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-120}
+      INGEST_ON_STARTUP: "true"
+      DOCS_DIR: /app/data/docs
+      INDEX_DIR: /app/data/index
+      EMBEDDING_CACHE_DIR: /app/models  # model baked into the image at build time
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.40.16}  # pinned; override with OLLAMA_IMAGE_TAG
+    ports:
+      - "127.0.0.1:11434:11434"  # localhost only: the Ollama API has no authentication
+    volumes:
+      - ollama-models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # One-shot job: downloads the model into the shared volume (~4.9 GB the first time).
+  ollama-pull:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.40.16}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-llama3.1:8b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  ollama-models:
