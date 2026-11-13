@@ -6,9 +6,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from helpdesk_rag.domain import Answer
+from helpdesk_rag.domain import MAX_TOP_K, QUESTION_MAX_CHARS, Answer
 
-QUESTION_MAX_CHARS = 1000
 SNIPPET_CHARS = 240
 
 Question = Annotated[
@@ -29,7 +28,7 @@ class AskRequest(BaseModel):
 
     question: Question = Field(description="The employee's question in natural language.")
     top_k: int | None = Field(
-        default=None, ge=1, le=10, description="How many chunks to retrieve (default from TOP_K)."
+        default=None, ge=1, le=MAX_TOP_K, description="How many chunks to retrieve (default from TOP_K)."
     )
 
 

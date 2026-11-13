@@ -273,3 +273,21 @@ def test_env_example_matches_code_defaults() -> None:
     assert example.model_dump(exclude={"anthropic_api_key"}) == defaults.model_dump(
         exclude={"anthropic_api_key"}
     )
+
+
+def test_ollama_context_window_must_fit_the_largest_request() -> None:
+    with pytest.raises(ValueError, match="OLLAMA_NUM_CTX=2048 is too small"):
+        Settings(_env_file=None, llm_provider="ollama", ollama_num_ctx=2048)
+    # A smaller CHUNK_SIZE makes the same window large enough.
+    assert Settings(_env_file=None, llm_provider="ollama", ollama_num_ctx=4096, chunk_size=400)
+
+
+def test_ollama_context_check_ignores_claude_mode() -> None:
+    assert Settings(_env_file=None, llm_provider="anthropic", ollama_num_ctx=2048).ollama_num_ctx == 2048
+
+
+def test_default_context_window_fits_the_default_chunk_size() -> None:
+    from helpdesk_rag.config import min_ollama_num_ctx
+
+    defaults = Settings(_env_file=None, llm_provider="ollama")
+    assert min_ollama_num_ctx(defaults.chunk_size) <= defaults.ollama_num_ctx

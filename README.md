@@ -366,7 +366,7 @@ All settings are environment variables (or a `.env` file in the working director
 | `ANTHROPIC_MODEL` / `ANTHROPIC_EFFORT` | `claude-opus-5-5` / `low` | Claude model and effort (`low`…`max`) |
 | `ANTHROPIC_MAX_TOKENS` | `16000` | output cap (includes the model's internal reasoning) |
 | `OLLAMA_BASE_URL` / `OLLAMA_MODEL` | `http://localhost:11434` / `llama3.1:8b` | local model server and model |
-| `OLLAMA_NUM_CTX` / `OLLAMA_TEMPERATURE` | `8192` / `0.1` | context window and sampling for Ollama |
+| `OLLAMA_NUM_CTX` / `OLLAMA_TEMPERATURE` | `8192` / `0.1` | context window and sampling for Ollama; in Ollama mode startup fails if the window cannot hold a `top_k=10` prompt of `CHUNK_SIZE` excerpts plus the answer (about 4,900 tokens at the default chunk size), because Ollama would silently cut the prompt |
 | `LLM_TIMEOUT_SECONDS` | `60` | overall LLM budget per request, including the concurrency queue |
 | `LLM_MAX_RETRIES` | `2` | Claude SDK retries (429, 5xx, connection errors, with backoff) |
 | `MAX_CONCURRENT_LLM_CALLS` | `8` | per-process cap on in-flight LLM calls |

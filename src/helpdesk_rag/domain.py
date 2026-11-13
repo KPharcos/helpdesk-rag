@@ -7,6 +7,10 @@ from typing import Literal
 
 AnswerStatus = Literal["answered", "no_relevant_context"]
 
+# Request limits, shared by the HTTP schema and the configuration checks.
+QUESTION_MAX_CHARS = 1000
+MAX_TOP_K = 10
+
 
 @dataclass(frozen=True, slots=True)
 class Chunk:
