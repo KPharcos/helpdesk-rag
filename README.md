@@ -1,5 +1,7 @@
 # helpdesk-rag
 
+[![CI](https://github.com/KPharcos/helpdesk-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/KPharcos/helpdesk-rag/actions/workflows/ci.yml)
+
 An internal **IT helpdesk knowledge-base Q&A service**. Employees ask questions in plain English
 ("How do I reset my password?", "The VPN says my certificate expired"), and the service answers
 from the company's IT articles and returns the passages it gave the model as sources.
@@ -27,6 +29,7 @@ locally, so local mode needs no API key at all.
 12. [Concurrent users and scaling](#12-concurrent-users-and-scaling)
 13. [Known limits and simplifications](#13-known-limits-and-simplifications)
 14. [Next steps](#14-next-steps)
+15. [License](#15-license)
 
 ---
 
@@ -644,3 +647,7 @@ This section describes what the current code does (**implemented**) and what I'd
 6. Conversation memory with question rewriting for follow-ups.
 7. A small evaluation set for regression-testing retrieval and answers when prompts,
    models or documents change.
+
+## 15. License
+
+MIT, see [LICENSE](LICENSE). CI (`.github/workflows/ci.yml`) checks the lockfile, runs the offline test suite and builds and starts the Docker image on every push to `main`.
