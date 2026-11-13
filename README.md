@@ -167,6 +167,32 @@ two files are swapped one after the other; the app loads the index only at start
 **restart the app after re-ingesting**.
 
 **Question** (`POST /ask`):
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as API layer (FastAPI)
+    participant S as QAService
+    participant G as LangGraph flow
+    participant V as Embedder + VectorStore
+    participant L as LLM (Claude or Ollama)
+    C->>API: POST /ask (question, top_k)
+    API->>API: request id, body validation (422)
+    API->>S: ask(question, top_k)
+    S->>G: ainvoke (503 if no index was loaded)
+    G->>G: validate: normalise whitespace
+    G->>V: embed question in a worker thread, top_k search
+    alt best score ≥ MIN_RELEVANCE_SCORE
+        G->>L: grounded prompt, under concurrency limit and timeout
+        L-->>G: answer (provider error 502, timeout 504)
+        G-->>S: status answered, sources = top_k chunks
+    else no chunk passes the gate
+        G-->>S: status no_relevant_context, LLM not called
+    end
+    S-->>API: Answer
+    API-->>C: JSON body + X-Request-ID header
+```
+
 1. FastAPI validates the body (1–1000 chars after trimming, `top_k` 1–10).
 2. `validate` node normalises whitespace.
 3. `retrieve` node embeds the question (in a worker thread) and takes the `top_k` most similar
@@ -191,6 +217,20 @@ two files are swapped one after the other; the app loads the index only at start
 | **Claude Opus 5.5 at `effort: low`** | Current default Opus model: strong instruction following, so it sticks to the excerpts and cites `[chunk_id]`s reliably. Grounded Q&A over a few short excerpts is a simple task, so low effort keeps latency and cost down (estimated at roughly 1–2 cents per question with Opus 5.5 at $4/$20 per million input/output tokens; thinking tokens are billed as output). Effort is configurable (`ANTHROPIC_EFFORT`). | Paid, network-dependent. |
 | **Server-side refusal fallbacks** (`fallbacks: "default"`) | Security content (phishing, MFA attacks) can occasionally trip a model's safety classifier. With fallbacks the API re-runs a declined request on a fallback model within the same call, so users rarely see a refusal; if the whole chain refuses we return `llm_error`. | Beta feature (`server-side-fallback-2026-07-01`); only on the first-party Claude API. |
 | **Llama 3.1 8B via Ollama** for local mode | Free model, good instruction following, 128k context, fits an 8 GB GPU in the default 4-bit quantisation and still runs on CPU. | Slower than Claude and expected to follow the grounding rules less reliably (not measured; in spot checks on the sample data it answered and cited `[chunk_id]`s correctly). |
+
+### Extension points
+
+| To... | Change | Keep in mind |
+|---|---|---|
+| add an LLM provider | a new adapter in `integrations/<name>_llm.py` implementing `LLMClient.generate` (map failures to `LLMError` / `LLMTimeoutError`), a branch in `factory.build_llm`, the provider value and its settings in `config.py`, `.env.example` | adapter tests in `tests/test_adapters.py`; add the SDK name to `PROVIDER_PACKAGES` in `tests/test_architecture.py` |
+| swap the vector store (Qdrant, pgvector, ...) | implement `VectorStore` (`search`, `__len__`) in `integrations/`, then change `factory.build_store` and `factory.load_store` | nothing else creates or loads the store, so ingest, the graph and the API stay unchanged |
+| change the embedding model | `EMBEDDING_MODEL` (a new adapter next to `fastembed_embedder.py` for another library) | re-run ingest and re-calibrate `MIN_RELEVANCE_SCORE` |
+| add an endpoint | a route on `router` in `api/app.py` (inject `Container`), models in `api/schemas.py`, logic in `service.py` | list its error statuses in the route's `responses`; tests in `tests/test_api.py` |
+| add an error type / status | an exception in `domain.py`, a handler in `api/errors.py` | handlers resolve by class hierarchy (`LLMTimeoutError` is an `LLMError`) |
+| add a graph step (query rewrite, re-ranking) | a node and edges in `rag/graph.py` | per-request data only in `QAState`; shared objects stay read-only |
+
+`tests/test_architecture.py` keeps these boundaries: it fails if code outside `integrations/`
+imports a provider SDK or a concrete adapter.
 
 ## 6. Install, ingest, run, test: exact steps
 
